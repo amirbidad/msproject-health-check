@@ -5,17 +5,97 @@ import re
 import jdatetime
 from datetime import datetime
 
-st.set_page_config(page_title="مدیر‌یار - عارضه‌یابی پیشرفته زمان‌بندی پروژه", page_icon="📊", layout="wide")
+# تنظیمات اولیه صفحه
+st.set_page_config(page_title="مدیر‌یار - عارضه‌یابی هوشمند زمان‌بندی", page_icon="📈", layout="wide")
 
-st.title("📊 سیستم جامع عارضه‌یابی و سلامت‌سنجی پروژه‌ها (MS Project XML)")
-st.markdown("فایل `.xml` مایکرو‌سافت پرجکت خود را بارگذاری کنید تا بررسی وزن‌ها، پیش‌نیازها، مسیر بحرانی و تقویم شمسی به صورت خودکار انجام شود.")
+# تزریق CSS سفارشی برای ساخت UI مدرن و داشبوردی
+st.markdown("""
+    <style>
+    /* فونت و جهت متن */
+    @import url('https://v1.fontapi.ir/css/Vazir');
+    html, body, [class*="css"]  {
+        font-family: 'Vazir', sans-serif;
+        direction: rtl;
+        text-align: right;
+    }
+    
+    /* استایل کارت‌های شاخص (KPI Cards) */
+    .kpi-card {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        border-right: 5px solid #1E88E5;
+        margin-bottom: 10px;
+    }
+    .kpi-title {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 5px;
+    }
+    .kpi-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #111;
+    }
+    
+    /* استایل کارت‌های خطا و هشدار */
+    .report-card-error {
+        background-color: #FFF5F5;
+        border: 1px solid #FEB2B2;
+        border-right: 6px solid #E53E3E;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    }
+    .report-card-warning {
+        background-color: #FFFAF0;
+        border: 1px solid #FBD38D;
+        border-right: 6px solid #DD6B20;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    }
+    .report-card-success {
+        background-color: #F0FFF4;
+        border: 1px solid #9AE6B4;
+        border-right: 6px solid #38A169;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 12px;
+    }
+    .card-icon {
+        font-size: 20px;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
+    
+    /* هدرهای بخش‌ها */
+    .section-header {
+        color: #2D3748;
+        font-size: 20px;
+        font-weight: bold;
+        margin-top: 25px;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #E2E8F0;
+        padding-bottom: 8px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# هدر اصلی برنامه
+st.title("📈 سیستم جامع عارضه‌یابی و سلامت‌سنجی زمان‌بندی (MS Project)")
+st.caption("ابزار هوشمند ارزیابی ساختار منطقی، وزن‌دهی، تقویم شمسی و مسیر بحرانی پروژه‌ها")
 
 # تنظیمات سایدبار
-st.sidebar.header("تنظیمات پارامترهای ارزیابی")
-max_duration_threshold = st.sidebar.number_input("آستانه هشدار فعالیت‌های طولانی (روز)", min_value=5, max_value=60, value=15)
+st.sidebar.image("https://img.icons8.com/fluency/96/project-setup.png", width=80)
+st.sidebar.header("⚙️ پارامترهای ارزیابی")
+max_duration_threshold = st.sidebar.number_input("آستانه فعالیت‌های طولانی (روز)", min_value=5, max_value=60, value=15)
 weight_tolerance = st.sidebar.number_input("تلورانس مجاز جمع وزن‌ها", min_value=0.0, max_value=1.0, value=0.01)
 
-uploaded_file = st.file_uploader("انتخاب فایل XML پروژه", type=["xml"])
+uploaded_file = st.file_uploader("📂 انتخاب فایل XML پروژه", type=["xml"])
 
 if uploaded_file is not None:
     try:
@@ -30,9 +110,7 @@ if uploaded_file is not None:
         p_start_date = proj_start.text[:10] if proj_start is not None and proj_start.text else "نامشخص"
         p_finish_date = proj_finish.text[:10] if proj_finish is not None and proj_finish.text else "نامشخص"
 
-        st.success(f"فایل با موفقیت بارگذاری شد. بازه کل پروژه: از {p_start_date} تا {p_finish_date}")
-
-        # پیدا کردن شناسه‌های فیلدهایی که عنوان یا نام آن‌ها حاوی کلمه Weight یا وزن است
+        # شناسایی فیلدهای مربوط به Weight
         weight_field_ids = set()
         ext_attrs = root.findall('.//ns:ExtendedAttribute', namespace) if namespace else root.findall('.//ExtendedAttribute')
         for ext in ext_attrs:
@@ -61,7 +139,7 @@ if uploaded_file is not None:
             is_summary = summary.text if summary is not None else '0'
 
             if name is not None and name.text is not None and is_summary == '0':
-                # استخراج پیش‌نیازها و روابط
+                # پیش‌نیازها
                 preds = []
                 pred_links = task.findall('ns:PredecessorLink', namespace) if namespace else task.findall('PredecessorLink')
                 for pl in pred_links:
@@ -69,11 +147,11 @@ if uploaded_file is not None:
                     if p_uid is not None:
                         preds.append(p_uid.text)
 
-                # استخراج منابع
+                # منابع
                 res_ass = task.findall('ns:ResourceAssignment', namespace) if namespace else task.findall('ResourceAssignment')
                 has_resource = len(res_ass) > 0
 
-                # تبدیل مدت زمان به روز
+                # مدت زمان
                 dur_text = duration.text if duration is not None else 'PT0H0M0S'
                 dur_days = 0.0
                 if 'H' in dur_text:
@@ -84,7 +162,7 @@ if uploaded_file is not None:
                     except:
                         pass
 
-                # استخراج وزن بر اساس فیلدهایی که عنوان Weight یا وزن دارند
+                # استخراج وزن
                 weight_val = 0.0
                 task_ext_attrs = task.findall('ns:ExtendedAttribute', namespace) if namespace else task.findall('ExtendedAttribute')
                 for tea in task_ext_attrs:
@@ -97,7 +175,6 @@ if uploaded_file is not None:
                         except:
                             pass
                 
-                # Fallback به Number1 اگر در ExtendedAttribute یافت نشد
                 if weight_val == 0.0:
                     num1 = task.find('ns:Number1', namespace) if namespace else task.find('Number1')
                     if num1 is not None and num1.text:
@@ -106,7 +183,7 @@ if uploaded_file is not None:
                         except:
                             weight_val = 0.0
 
-                # تبدیل تاریخ میلادی به تاریخ شمسی برای شروع و پایان
+                # شمسی‌سازی تاریخ‌ها
                 s_date_str = start.text[:10] if start is not None and start.text else None
                 f_date_str = finish.text[:10] if finish is not None and finish.text else None
                 
@@ -152,78 +229,143 @@ if uploaded_file is not None:
 
         if not df_tasks.empty:
             df_tasks['Is_Critical'] = df_tasks['Duration_Days'] > (df_tasks['Duration_Days'].mean() + df_tasks['Duration_Days'].std())
-
-            st.subheader("📋 جدول اطلاعات و تقویم فعالیت‌های استخراج‌شده")
-            st.dataframe(df_tasks[['UID', 'Name', 'Start_Shamsi', 'Finish_Shamsi', 'Duration_Days', 'IsManual', 'Predecessors', 'Weight']], use_container_width=True)
-
-            # موتور عارضه‌یابی (Health Check Rules Engine)
-            st.markdown("---")
-            st.subheader("🔍 گزارش عارضه‌یابی و سلامت‌سنجی (Health Check Report)")
-
+            
+            # --- بخش ۱: کارت‌های خلاصه وضعیت (KPI Cards) ---
+            st.markdown('<div class="section-header">📌 نگاه کلی به برنامه زمان‌بندی</div>', unsafe_allow_html=True)
+            
+            kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+            
+            total_tasks_cnt = len(df_tasks)
+            total_weight_sum = df_tasks['Weight'].sum()
+            
+            # قوانین ارزیابی برای محاسبه تعداد خطاها و هشدارها
             errors = []
             warnings = []
 
-            # ۱. بررسی وزن‌ها
-            total_weight = df_tasks['Weight'].sum()
-            if abs(total_weight - 100.0) > weight_tolerance:
-                errors.append(f"مجموع وزن فعالیت‌ها برابر با {total_weight:.2f} است در حالی که قانون مدیریت پروژه حکم می‌کند دقیقاً 100 باشد.")
-            else:
-                st.success("✅ بررسی وزن‌ها: مجموع وزن فعالیت‌ها دقیقاً برابر با 100 است.")
+            if abs(total_weight_sum - 100.0) > weight_tolerance:
+                errors.append(f"مجموع وزن فعالیت‌ها <b>{total_weight_sum:.2f}٪</b> است (باید دقیقاً ۱۰۰٪ باشد).")
 
-            # ۲. بررسی تسک‌های یتیم
             dangling_tasks = df_tasks[~df_tasks['Has_Predecessor'] & (df_tasks.index > 0)]
             if not dangling_tasks.empty:
-                task_names_str = ", ".join(dangling_tasks['Name'].tolist())
-                warnings.append(f"فعالیت‌های زیر فاقد پیش‌نیاز (Predecessor) هستند و زنجیره منطقی را قطع می‌کنند: {task_names_str}")
+                warnings.append(f"تعداد <b>{len(dangling_tasks)} فعالیت</b> فاقد پیش‌نیاز هستند و زنجیره منطقی را قطع کرده‌اند.")
 
-            # ۳. بررسی حالت زمان‌بندی دستی
             manual_tasks = df_tasks[df_tasks['IsManual'] == 1]
             if not manual_tasks.empty:
-                task_names_str = ", ".join(manual_tasks['Name'].tolist())
-                warnings.append(f"فعالیت‌های زیر به صورت دستی (Manual) تنظیم شده‌اند و به‌روزرسانی اتوماتیک ندارند: {task_names_str}")
+                warnings.append(f"تعداد <b>{len(manual_tasks)} فعالیت</b> در حالت زمان‌بندی دستی (Manual) قرار دارند.")
 
-            # ۴. بررسی فعالیت‌های طولانی
             long_tasks = df_tasks[df_tasks['Duration_Days'] > max_duration_threshold]
             if not long_tasks.empty:
-                task_names_str = ", ".join([f"{row['Name']} ({row['Duration_Days']} روز)" for _, row in long_tasks.iterrows()])
-                warnings.append(f"فعالیت‌های طولانی‌تر از آستانه {max_duration_threshold} روز: {task_names_str}")
+                warnings.append(f"تعداد <b>{len(long_tasks)} فعالیت</b> طولانی‌تر از آستانه {max_duration_threshold} روز شناسایی شد.")
 
-            # ۵. بررسی تقویم شمسی و تعطیلات (شروع در روز جمعه)
             holiday_tasks = df_tasks[df_tasks['Is_On_Friday']]
             if not holiday_tasks.empty:
-                task_names_str = ", ".join(holiday_tasks['Name'].tolist())
-                warnings.append(f"فعالیت‌های زیر در روز جمعه (تعطیل رسمی هفتگی) آغاز شده‌اند که نشان‌دهنده عدم تنظیم دقیق تقویم پروژه است: {task_names_str}")
+                warnings.append(f"تعداد <b>{len(holiday_tasks)} فعالیت</b> در روز جمعه (تعطیل رسمی) شروع می‌شوند.")
 
-            # ۶. شناسایی مسیر بحرانی (Critical Path)
-            critical_tasks = df_tasks[df_tasks['Is_Critical']]
-            critical_names = ", ".join(critical_tasks['Name'].tolist())
+            no_res_tasks = df_tasks[~df_tasks['Has_Resource']]
+            if not no_res_tasks.empty:
+                warnings.append(f"تعداد <b>{len(no_res_tasks)} فعالیت</b> فاقد تخصیص منبع هستند.")
 
-            col1, col2 = st.columns(2)
+            with kpi1:
+                st.markdown(f'''
+                    <div class="kpi-card" style="border-right-color: #3182CE;">
+                        <div class="kpi-title">تعداد کل فعالیت‌ها</div>
+                        <div class="kpi-value">{total_tasks_cnt} <span style="font-size:14px; font-weight:normal;">تسک</span></div>
+                    </div>
+                ''', unsafe_allow_html=True)
+
+            with kpi2:
+                weight_color = "#38A169" if abs(total_weight_sum - 100.0) <= weight_tolerance else "#E53E3E"
+                st.markdown(f'''
+                    <div class="kpi-card" style="border-right-color: {weight_color};">
+                        <div class="kpi-title">مجموع وزن پروژه</div>
+                        <div class="kpi-value" style="color: {weight_color};">{total_weight_sum:.1f}%</div>
+                    </div>
+                ''', unsafe_allow_html=True)
+
+            with kpi3:
+                st.markdown(f'''
+                    <div class="kpi-card" style="border-right-color: #E53E3E;">
+                        <div class="kpi-title">خطاهای بحرانی</div>
+                        <div class="kpi-value" style="color: #E53E3E;">{len(errors)}</div>
+                    </div>
+                ''', unsafe_allow_html=True)
+
+            with kpi4:
+                st.markdown(f'''
+                    <div class="kpi-card" style="border-right-color: #DD6B20;">
+                        <div class="kpi-title">هشدارها و ریسک‌ها</div>
+                        <div class="kpi-value" style="color: #DD6B20;">{len(warnings)}</div>
+                    </div>
+                ''', unsafe_allow_html=True)
+
+            # --- بخش ۲: نتایج عارضه‌یابی به صورت کارت‌های اختصاصی ---
+            st.markdown('<div class="section-header">🔍 گزارش تفکیکی سلامت زمان‌بندی</div>', unsafe_allow_html=True)
             
-            with col1:
-                st.markdown("### ❌ خطاهای بحرانی (Critical Errors)")
+            col_err, col_warn = st.columns(2)
+
+            with col_err:
+                st.subheader("❌ خطاهای بحرانی (Critical Errors)")
                 if errors:
                     for err in errors:
-                        st.error(err)
+                        st.markdown(f'''
+                            <div class="report-card-error">
+                                <span class="card-icon">🚨</span> {err}
+                            </div>
+                        ''', unsafe_allow_html=True)
                 else:
-                    st.success("هیچ خطای بحرانی در ساختار پروژه یافت نشد!")
+                    st.markdown('''
+                        <div class="report-card-success">
+                            <span class="card-icon">✅</span> هیچ خطای بحرانی در ساختار وزن‌ها و الگوی پروژه یافت نشد.
+                        </div>
+                    ''', unsafe_allow_html=True)
 
-            with col2:
-                st.markdown("### ⚠️ هشدارها و ریسک‌ها (Warnings)")
+            with col_warn:
+                st.subheader("⚠️ هشدارها و کیفیت ساختار (Warnings)")
                 if warnings:
                     for warn in warnings:
-                        st.warning(warn)
+                        st.markdown(f'''
+                            <div class="report-card-warning">
+                                <span class="card-icon">⚠️</span> {warn}
+                            </div>
+                        ''', unsafe_allow_html=True)
                 else:
-                    st.success("هیچ هشدار یا ریسک مدیریتی شناسایی نشد!")
+                    st.markdown('''
+                        <div class="report-card-success">
+                            <span class="card-icon">✅</span> تمام ضوابط استاندارد زمان‌بندی رعایت شده است.
+                        </div>
+                    ''', unsafe_allow_html=True)
 
-            st.markdown("---")
-            st.subheader("🔥 تحلیل مسیر بحرانی (Critical Path Insights)")
-            st.info(f"بر اساس تحلیل طول مدت و وزن فعالیت‌ها، این تسک‌ها در زمره فعالیت‌های کلیدی و بحرانی پروژه قرار دارند که تأخیر در آن‌ها کل پروژه را به تعویق می‌اندازد: **{critical_names}**")
+            # --- بخش ۳: تحلیل مسیر بحرانی ---
+            st.markdown('<div class="section-header">🔥 فعالیت‌های کلیدی و مسیر بحرانی</div>', unsafe_allow_html=True)
+            critical_tasks = df_tasks[df_tasks['Is_Critical']]
+            critical_names = " ، ".join(critical_tasks['Name'].tolist()) if not critical_tasks.empty else "فعالیت بحرانی خاصی یافت نشد"
+            
+            st.info(f"**تسک‌های با ریسک بالایی که تاخیر در آن‌ها پروژه را متوقف می‌سازد:** {critical_names}")
+
+            # --- بخش ۴: جدول تعاملی اطلاعات فعالیت‌ها ---
+            st.markdown('<div class="section-header">📋 جدول مدرن فعالیت‌ها و تقویم شمسی</div>', unsafe_allow_html=True)
+            
+            # تغییر نام ستون‌ها برای نمایش زیبا در جدول
+            display_df = df_tasks[['UID', 'Name', 'Start_Shamsi', 'Finish_Shamsi', 'Duration_Days', 'IsManual', 'Predecessors', 'Weight']].copy()
+            display_df.columns = ['شناسه (UID)', 'نام فعالیت', 'شروع (شمسی)', 'پایان (شمسی)', 'مدت (روز)', 'زمان‌بندی دستی', 'پیش‌نیازها', 'وزن (٪)']
+            
+            st.dataframe(
+                display_df, 
+                use_container_width=True,
+                height=350
+            )
 
         else:
             st.warning("هیچ فعالیتی برای ارزیابی در فایل XML شناسایی نشد.")
 
     except Exception as e:
-        st.error(f"خطا در خواندن فایل XML: {e}")
+        st.error(f"خطا در پردازش فایل XML: {e}")
 else:
-    st.info("لطفاً فایل XML خروجی نرم‌افزار MS Project خود را آپلود کنید تا گزارش سلامت صادر شود.")
+    # نمایش راهنمای صفحه اول
+    st.markdown("""
+    <div style="text-align: center; padding: 40px; background-color: #F7FAFC; border-radius: 15px; border: 2px dashed #CBD5E0; margin-top: 20px;">
+        <img src="https://img.icons8.com/fluency/96/upload-to-cloud.png" width="80"/>
+        <h3 style="color: #4A5568; margin-top: 15px;">برای شروع، فایل XML پروژه را آپلود کنید</h3>
+        <p style="color: #718096;">این سیستم به صورت خودکار وزن‌ها، تاریخ‌های شمسی، پیش‌نیازها و کیفیت زمان‌بندی شما را ارزیابی می‌کند.</p>
+    </div>
+    """, unsafe_allow_html=True)
