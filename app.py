@@ -32,6 +32,19 @@ if uploaded_file is not None:
 
         st.success(f"فایل با موفقیت بارگذاری شد. بازه کل پروژه: از {p_start_date} تا {p_finish_date}")
 
+        # پیدا کردن شناسه‌های فیلدهایی که عنوان یا نام آن‌ها حاوی کلمه Weight یا وزن است
+        weight_field_ids = set()
+        ext_attrs = root.findall('.//ns:ExtendedAttribute', namespace) if namespace else root.findall('.//ExtendedAttribute')
+        for ext in ext_attrs:
+            field_id = ext.find('ns:FieldID', namespace) if namespace else ext.find('FieldID')
+            title = ext.find('ns:Title', namespace) if namespace else ext.find('Title')
+            cf_name = ext.find('ns:CFName', namespace) if namespace else ext.find('CFName')
+            
+            title_text = title.text if title is not None and title.text else (cf_name.text if cf_name is not None and cf_name.text else "")
+            if field_id is not None and field_id.text and title_text:
+                if 'weight' in title_text.lower() or 'وزن' in title_text:
+                    weight_field_ids.add(field_id.text)
+
         # استخراج فعالیت‌ها
         tasks = root.findall('.//ns:Task', namespace) if namespace else root.findall('.//Task')
         tasks_data = []
@@ -71,20 +84,34 @@ if uploaded_file is not None:
                     except:
                         pass
 
-                # استخراج وزن (ذخیره شده در Number1)
+                # استخراج وزن بر اساس فیلدهایی که عنوان Weight یا وزن دارند
                 weight_val = 0.0
-                num1 = task.find('ns:Number1', namespace) if namespace else task.find('Number1')
-                if num1 is not None and num1.text:
-                    try:
-                        weight_val = float(num1.text)
-                    except:
-                        weight_val = 0.0
+                task_ext_attrs = task.findall('ns:ExtendedAttribute', namespace) if namespace else task.findall('ExtendedAttribute')
+                for tea in task_ext_attrs:
+                    t_field_id = tea.find('ns:FieldID', namespace) if namespace else tea.find('FieldID')
+                    t_val = tea.find('ns:Value', namespace) if namespace else tea.find('Value')
+                    if t_field_id is not None and t_field_id.text in weight_field_ids and t_val is not None and t_val.text:
+                        try:
+                            weight_val = float(t_val.text)
+                            break
+                        except:
+                            pass
+                
+                # Fallback به Number1 اگر در ExtendedAttribute یافت نشد
+                if weight_val == 0.0:
+                    num1 = task.find('ns:Number1', namespace) if namespace else task.find('Number1')
+                    if num1 is not None and num1.text:
+                        try:
+                            weight_val = float(num1.text)
+                        except:
+                            weight_val = 0.0
 
-                # تبدیل تاریخ میلادی به تاریخ شمسی برای بررسی تقویم
+                # تبدیل تاریخ میلادی به تاریخ شمسی برای شروع و پایان
                 s_date_str = start.text[:10] if start is not None and start.text else None
                 f_date_str = finish.text[:10] if finish is not None and finish.text else None
                 
                 jalali_start = ""
+                jalali_finish = ""
                 is_on_friday = False
                 
                 if s_date_str:
@@ -92,9 +119,16 @@ if uploaded_file is not None:
                         dt = datetime.strptime(s_date_str, "%Y-%m-%d")
                         j_date = jdatetime.date.fromgregorian(date=dt.date())
                         jalali_start = j_date.strftime("%Y/%m/%d")
-                        # بررسی اینکه آیا تاریخ شروع روی روز جمعه (تعطیل رسمی هفتگی ایران) افتاده است یا خیر
-                        if dt.weekday() == 4: # در پایتون 4 معادل جمعه است (0 دوشنبه تا 4 جمعه؟ بگذارید چک کنیم: دوشنبه=0، سه شنبه=1، چهارشنبه=2، پنجشنبه=3، جمعه=4)
+                        if dt.weekday() == 4:
                             is_on_friday = True
+                    except:
+                        pass
+
+                if f_date_str:
+                    try:
+                        dt_f = datetime.strptime(f_date_str, "%Y-%m-%d")
+                        j_date_f = jdatetime.date.fromgregorian(date=dt_f.date())
+                        jalali_finish = j_date_f.strftime("%Y/%m/%d")
                     except:
                         pass
 
@@ -103,7 +137,8 @@ if uploaded_file is not None:
                     'Name': name.text,
                     'Start_Miladi': s_date_str,
                     'Start_Shamsi': jalali_start,
-                    'Finish': f_date_str,
+                    'Finish_Miladi': f_date_str,
+                    'Finish_Shamsi': jalali_finish,
                     'Duration_Days': dur_days,
                     'IsManual': int(is_manual.text) if is_manual is not None and is_manual.text else 0,
                     'Predecessors': ", ".join(preds),
@@ -116,13 +151,10 @@ if uploaded_file is not None:
         df_tasks = pd.DataFrame(tasks_data)
 
         if not df_tasks.empty:
-            # محاسبه ساده و کاربردی مسیر بحرانی (Critical Path Evaluation)
-            # تسک‌هایی که شناور صفر دارند یا تسک‌های پایانی زنجیره‌ها بدون پس‌نیاز یا با وابستگی‌های کلیدی
-            # در اینجا برای تحلیل هوشمند، تسک‌هایی که پیش‌نیاز کلیدی ندارند یا طولانی‌ترین مسیر را می‌سازند مشخص می‌کنیم
             df_tasks['Is_Critical'] = df_tasks['Duration_Days'] > (df_tasks['Duration_Days'].mean() + df_tasks['Duration_Days'].std())
 
             st.subheader("📋 جدول اطلاعات و تقویم فعالیت‌های استخراج‌شده")
-            st.dataframe(df_tasks[['UID', 'Name', 'Start_Shamsi', 'Finish', 'Duration_Days', 'IsManual', 'Predecessors', 'Weight']], use_container_width=True)
+            st.dataframe(df_tasks[['UID', 'Name', 'Start_Shamsi', 'Finish_Shamsi', 'Duration_Days', 'IsManual', 'Predecessors', 'Weight']], use_container_width=True)
 
             # موتور عارضه‌یابی (Health Check Rules Engine)
             st.markdown("---")
